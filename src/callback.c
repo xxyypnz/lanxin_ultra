@@ -43,6 +43,7 @@ case LX_DATA_UNSIGNED_CHAR: \
 // 回调函数本体
 // 数据帧深拷贝到缓冲区
 static unsigned long long frame_num = 0;
+static int producer_index = 0;
 
 void producer(FrameInfo* frame, void* usr_data){
     if(frame == NULL || frame->frame_state != LX_SUCCESS){
@@ -50,46 +51,58 @@ void producer(FrameInfo* frame, void* usr_data){
         return;
     }
 
-    int frame_count = atomic_load(&g_buffer_queue.frame_count);
-    if(frame_count >= BUFFER_QUEUE_SIZE) return;
-
-    Buffer* dst = &g_buffer_queue.buffer[g_buffer_queue.tail];
-    pthread_mutex_lock(&dst->mutex);
+    // int frame_count = atomic_load(&g_buffer_queue.frame_count);
+    // if(frame_count >= BUFFER_QUEUE_SIZE) return;
+    // Buffer* dst = &g_buffer_queue.buffer[g_buffer_queue.tail];
+    // pthread_mutex_lock(&dst->mutex);
 
     frame_num++;
+    Buffer* dst = &g_buffer_array[producer_index];
+    if(sem_wait(&dst->A) != 0){
+        perror("producer: sem_wait A failed");
+        return;
+    }
 
-    PRODUCER_COPY(frame->depth_data, 
+    PRODUCER_COPY(frame->depth_data,
          dst->depth_buffer,
          dst->depth_capacity,
          dst->depth_width,
          dst->depth_height,
          dst->depth_channel,
          dst->depth_sensor_timestamp,
-         dst->depth_recv_timestamp, "depth", frame_num);
+         dst->depth_recv_timestamp,
+         "depth", frame_num);
 
-    PRODUCER_COPY(frame->amp_data, 
+    PRODUCER_COPY(frame->amp_data,
          dst->amp_buffer,
          dst->amp_capacity,
          dst->amp_width,
          dst->amp_height,
          dst->amp_channel,
          dst->amp_sensor_timestamp,
-         dst->amp_recv_timestamp, "amp", frame_num);
+         dst->amp_recv_timestamp,
+         "amp", frame_num);
 
-    PRODUCER_COPY(frame->rgb_data, 
+    PRODUCER_COPY(frame->rgb_data,
          dst->rgb_buffer,
          dst->rgb_capacity,
          dst->rgb_width,
          dst->rgb_height,
          dst->rgb_channel,
          dst->rgb_sensor_timestamp,
-         dst->rgb_recv_timestamp, "rgb", frame_num);
+         dst->rgb_recv_timestamp,
+         "rgb", frame_num);
 
+    if(sem_post(&dst->B) != 0){
+        perror("producer: sem_post B failed");
+        return;
+    }
 
-    pthread_mutex_unlock(&dst->mutex);
+    producer_index = (producer_index + 1) % BUFFER_SIZE;
 
-    g_buffer_queue.tail = (g_buffer_queue.tail + 1) % BUFFER_QUEUE_SIZE;
-    atomic_fetch_add_explicit(&g_buffer_queue.frame_count, 1, memory_order_release);
+    // pthread_mutex_unlock(&dst->mutex);
+    // g_buffer_queue.tail = (g_buffer_queue.tail + 1) % BUFFER_QUEUE_SIZE;
+    // atomic_fetch_add_explicit(&g_buffer_queue.frame_count, 1, memory_order_release);
 
     return;
 }

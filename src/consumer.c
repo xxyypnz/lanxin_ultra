@@ -165,6 +165,19 @@ extern int g_flag;
     } \
 }while(0)
 
+void consumer_stop_notify(void){
+    // 通过唤醒 consumer 线程，避免其在 sem_wait 阻塞时无法退出
+    for(int i = 0; i < BUFFER_SIZE; i++){
+        if(sem_post(&g_buffer_array[i].B) != 0){
+            perror("consumer_stop_notify: sem_post B failed");
+        }
+    }
+
+    return;
+}
+
+static int consumer_index = 0;
+
 void* consumer(void* arg){
     // 宏定义中的dst
     static Frame depth_frame, amp_frame, rgb_frame;
@@ -189,25 +202,45 @@ void* consumer(void* arg){
 
     while(g_flag){
 
-        int frame_count = atomic_load(&g_buffer_queue.frame_count);
-        if(frame_count <= 0){
-            empty_times++;
-            if(empty_times % 10 == 0){
-                printf("consumer: shared buffer is empty, waiting for producer...\n");
-            }
-            usleep(100000); // 100ms
+        // int frame_count = atomic_load(&g_buffer_queue.frame_count);
+        // if(frame_count <= 0){
+        //     empty_times++;
+        //     if(empty_times % 10 == 0){
+        //         printf("consumer: shared buffer is empty, waiting for producer...\n");
+        //     }
+        //     usleep(100000); // 100ms
+        //     continue;
+        // }
+
+        // 1.从 shared buffer 拷贝数据到 consumer 函数内的局部变量
+        // Buffer* src = &g_buffer_queue.buffer[g_buffer_queue.head];
+        // pthread_mutex_lock(&src->mutex);
+
+        Buffer* src = &g_buffer_array[consumer_index];
+        if(sem_wait(&src->B) != 0){
+            perror("consumer: sem_wait B failed");
             continue;
         }
 
-        // 1.从 shared buffer 拷贝数据到 consumer 函数内的局部变量
-        Buffer* src = &g_buffer_queue.buffer[g_buffer_queue.head];
-        pthread_mutex_lock(&src->mutex);
+        // 保证退出时能够唤醒 producer 线程，避免其在 sem_wait 阻塞时无法退出
+        // 同时不操作无帧数据的缓冲区，避免出现数据覆盖问题
+        if(!g_flag){
+            if(sem_post(&src->A) != 0){
+                perror("consumer: sem_post A failed");
+            }
+            break;
+        }
 
         CONSUMER_COPY(src->depth_buffer, src->depth_capacity, depth_frame, src->depth_width, src->depth_height, src->depth_channel, src->depth_sensor_timestamp, src->depth_recv_timestamp);
         CONSUMER_COPY(src->amp_buffer, src->amp_capacity, amp_frame, src->amp_width, src->amp_height, src->amp_channel, src->amp_sensor_timestamp, src->amp_recv_timestamp);
         CONSUMER_COPY(src->rgb_buffer, src->rgb_capacity, rgb_frame, src->rgb_width, src->rgb_height, src->rgb_channel, src->rgb_sensor_timestamp, src->rgb_recv_timestamp);
 
-        pthread_mutex_unlock(&src->mutex);
+        if(sem_post(&src->A) != 0){
+            perror("consumer: sem_post A failed");
+            continue;
+        }
+        consumer_index = (consumer_index + 1) % BUFFER_SIZE;
+        // pthread_mutex_unlock(&src->mutex);
 
         // 2.调用 detector 对 rgb_frame 进行目标检测
         DETECT(rgb_frame, detector_ready, detected_rgb_length,
@@ -217,7 +250,6 @@ void* consumer(void* arg){
         ENCODE(depth_frame, depth_frame.channel);
         ENCODE(amp_frame, amp_frame.channel);
         ENCODE(rgb_frame, rgb_frame.channel);
-
 
         // 4.数据打包
         PACK(depth_frame, depth_package);
@@ -234,7 +266,6 @@ void* consumer(void* arg){
         }
         pthread_rwlock_unlock(&g_client_map_lock);
 
-
         pthread_rwlock_rdlock(&g_clientAI_map_lock);
         for(int i = 0; i < MAX_CONNECTIONS; i++){
             bool send_failed_flag = false;
@@ -244,8 +275,8 @@ void* consumer(void* arg){
         }
         pthread_rwlock_unlock(&g_clientAI_map_lock);
 
-        g_buffer_queue.head = (g_buffer_queue.head + 1) % BUFFER_QUEUE_SIZE;
-        atomic_fetch_sub_explicit(&g_buffer_queue.frame_count, 1, memory_order_release);
+        // g_buffer_queue.head = (g_buffer_queue.head + 1) % BUFFER_QUEUE_SIZE;
+        // atomic_fetch_sub_explicit(&g_buffer_queue.frame_count, 1, memory_order_release);
     }
 
     return NULL;

@@ -1,0 +1,7 @@
+
+//How to building and use lx_camera_node node
+step 0: roscore
+step 1: cd lx_camera_node_ws
+step 2: catkin_make
+step 3: source devel/setup.bash
+step 4: roslaunch src/launch/lx_camera_ros.launch

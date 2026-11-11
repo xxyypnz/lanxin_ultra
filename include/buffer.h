@@ -4,7 +4,8 @@
 
 #include "system.h"
 
-#define BUFFER_QUEUE_SIZE 4
+// #define BUFFER_QUEUE_SIZE 4
+#define BUFFER_SIZE 2
 
 typedef struct{
 
@@ -35,16 +36,19 @@ typedef struct{
     // void* app_buffer;
     // size_t app_capacity;
 
-    pthread_mutex_t mutex;
+    // pthread_mutex_t mutex;
+    sem_t A;
+    sem_t B;
 }Buffer;
+extern Buffer g_buffer_array[BUFFER_SIZE];
 
-typedef struct{
-    Buffer buffer[BUFFER_QUEUE_SIZE];
-    int head;
-    int tail;
-    atomic_int frame_count;
-}BufferQueue;
-extern BufferQueue g_buffer_queue;
+// typedef struct{
+//     Buffer buffer[BUFFER_QUEUE_SIZE];
+//     int head;
+//     int tail;
+//     atomic_int frame_count;
+// }BufferQueue;
+// extern BufferQueue g_buffer_queue;
 
 void buffer_init(void);
 void buffer_free(void);

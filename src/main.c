@@ -34,6 +34,7 @@ void main_core(void){
     /** 先改变循环条件，再通过 eventfd 唤醒阻塞中的 epoll_wait。 */
     g_flag = 0;
     server_stop_notify();
+    consumer_stop_notify();
     /**/
 
     callback_free();
