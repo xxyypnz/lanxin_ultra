@@ -1,0 +1,16 @@
+# Model weights are deployed separately on the device.
+models/*.onnx
+models/*.pt
+models/*.rknn
+models/*.engine
+
+# Build outputs and Python cache.
+build/
+lanxin_ultra
+__pycache__/
+*.py[cod]
+*.so
+
+# Runtime output.
+log/
+*.log
